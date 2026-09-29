@@ -1676,8 +1676,8 @@ agent-device devices --platform android --android-device-allowlist emulator-5554
 ```
 
 - `--ios-simulator-device-set <path>` constrains simulator discovery and simulator command execution via `xcrun simctl --set <path> ...`.
-- The XCTest runner's `xcodebuild` phases resolve a scoped simulator in the same set through `-DVTSimulatorSetLocation=<path>`; `~/Library/Developer/XCTestDevices` is never redirected. If the selected Xcode no longer resolves the simulator that way, the runner start fails with `details.reason: "simulator_set_destination_not_found"`, and the error names the set and the selected Xcode version.
-- On macOS, daemon startup puts back a `~/Library/Developer/XCTestDevices` that an older agent-device left redirected into a scoped set: it removes any symlink at that path, restores `XCTestDevices.agent-device-backup` when it exists, and records each step in `daemon.log`. A failed restore is recorded there too and does not stop the daemon or a runner start.
+- The XCTest runner's `xcodebuild` phases resolve a scoped simulator in the same set through `-DVTSimulatorSetLocation=<path>`; `~/Library/Developer/XCTestDevices` is never redirected. If the selected Xcode no longer resolves the simulator that way, the runner start fails with `details.reason: "simulator_set_destination_not_found"`, and the error names the set, and the selected Xcode version when this daemon has already read it.
+- On macOS, daemon startup puts back a `~/Library/Developer/XCTestDevices` that an older agent-device left redirected into a scoped set, before the daemon accepts requests: it removes any symlink at that path, restores `XCTestDevices.agent-device-backup` when it exists, and records each step in `daemon.log`. A symlinked `XCTestDevices` is not supported: daemon startup removes a symlink you made yourself too, for example one that moves `XCTestDevices` to another volume. Only the link is removed, never the directory it points to, and the `daemon.log` entry names that directory. A failed restore is recorded there too and does not stop the daemon or a runner start.
 - `--android-device-allowlist <serials>` constrains Android discovery/selection to comma or space separated serials.
 - Scope is applied before selectors (`--device`, `--udid`, `--serial`), so out-of-scope selectors fail with `DEVICE_NOT_FOUND`.
 - With iOS simulator-set scope enabled, iOS physical devices are not enumerated.
@@ -2233,7 +2233,7 @@ agent-device settings permission reset screen-recording --platform macos
 - Permission actions are scoped to the active session app.
 - iOS permission targets: `all`, `camera`, `microphone`, `photos` (`full` or `limited`), `contacts`, `contacts-limited`, `notifications`, `calendar`, `location`, `location-always`, `media-library`, `motion`, `reminders`, `siri`. `all` travels as one `simctl privacy … all` call.
 - On iOS, which of those services a runtime actually changes is `simctl privacy`'s own verdict, not its help text: Xcode 26 omits `camera` from the list while granting it. A service the runtime refuses fails with `UNSUPPORTED_OPERATION` naming the service; on current runtimes that is `notifications`, which a targeted change cannot reach and `all` leaves untouched.
-- Android permission targets: `all`, `calendar`, `camera`, `contacts`, `location`, `media-library`, `microphone`, `notifications`, `photos`. `contacts` fans out to `READ_CONTACTS`+`WRITE_CONTACTS`, `location` to `FINE`+`COARSE`, `calendar` to `READ`+`WRITE`; named multi-id targets intersect the package's declared permissions so a coarse-only or read-only app still succeeds, while a target declaring none of its ids fails loudly. `all` resolves against the package's declared permissions instead. `deny|reset` of a multi-id target returns a comma-joined `permission` list.
+- Android permission targets: `all`, `calendar`, `camera`, `contacts`, `location`, `media-library`, `microphone`, `notifications`, `photos`. `contacts` fans out to `READ_CONTACTS`+`WRITE_CONTACTS`, `location` to `FINE`+`COARSE`, `calendar` to `READ`+`WRITE`; named multi-id targets intersect the package's declared permissions so a coarse-only or read-only app still succeeds, while a target declaring none of its ids fails loudly. `all` resolves against the package's declared permissions instead. Every response reports `permission` as the requested target and `permissions: string[]` as the ids actually mutated, in the order applied (`all` folds its applied ids into `permissions` the same way).
 - macOS permission targets: `accessibility`, `screen-recording`, `input-monitoring`.
 - On macOS, `settings permission grant ...` checks/request access and opens System Settings guidance when needed; it does not silently grant TCC permissions.
 - On macOS, `settings permission deny ...` is intentionally unsupported.
@@ -4693,6 +4693,31 @@ agent-device snapshot -i
 #       @e9 [other] "John Doe"
 # [off-screen below] 2 interactive items: "All Contacts", "New List"
 ```
+
+## Structured node fields (`--json`)
+
+Every node in `snapshot --json` output carries `kind`, next to `type` when the platform reports one:
+
+- `type` is the raw platform class, verbatim: `Button` / `StaticText` from XCUI, `android.widget.Button`
+  from the Android hierarchy. It differs by platform for the same UI role.
+- `kind` is the platform-neutral classification shown in brackets on the text line above
+  (`button`, `text-field`, `text`, `switch`, `link`, …), computed by the same function on every
+  platform, backend, and projection (`snapshot` and `snapshot -i` alike) — so text and JSON never
+  disagree about a node's role.
+
+```json
+{ "ref": "e4", "type": "android.widget.Button", "kind": "button", "label": "Send code" }
+{ "ref": "e40", "type": "Button", "role": "UIButton", "kind": "button", "label": "Continue to catalog" }
+```
+
+On iOS, `role` (when present) is the native AX class (`UIButton`) — a different fact carried only
+on iOS nodes; `kind` is the cross-platform one, present on every node on every platform.
+
+`role=` selectors (and `find role=...`) do not share `kind`'s vocabulary yet: they match a raw,
+leaf-only normalization of `type` (`statictext`, `edittext`), not `kind` values like `text` or
+`text-field`. Reconciling the two is tracked separately
+([#3021](https://github.com/callstack/agent-device/issues/3021)) because it would change matching
+for selectors already in use.
 
 ## iOS capture behavior
 
