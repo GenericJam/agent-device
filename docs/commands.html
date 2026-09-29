@@ -9,7 +9,7 @@
 <script defer src="/agent-device/static/js/lib-react.e84adf13b9.js"></script>
 <script defer src="/agent-device/static/js/lib-router.270f17bfa6.js"></script>
 <script defer src="/agent-device/static/js/476.52ed165336.js"></script>
-<script defer src="/agent-device/static/js/index.52b57fd73a.js"></script>
+<script defer src="/agent-device/static/js/index.826ca5a32a.js"></script>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="generator" content="Rspress v2.0.12">
 <meta property="og:url" content="https://oss.callstack.com/agent-device">
@@ -72,11 +72,12 @@
 <li><code>--platform apple</code> is an alias for the Apple automation backend (<code>ios</code>, <code>tvOS</code>, <code>macOS</code> selection).</li>
 <li>Use <code>--target mobile|tv|desktop</code> with <code>--platform</code> (required) to select phone/tablet vs TV-class vs desktop-class targets.</li>
 <li><code>boot</code> is mainly needed when starting a new session and <code>open</code> fails because no booted simulator/emulator is available.</li>
+<li><code>boot --timeout &lt;ms&gt;</code> is a startup budget for the Simulator boot, same as <code>open</code>&#x27;s. A never-booted iOS Simulator runs Apple&#x27;s first-boot migration, which can take several minutes; without the flag the command&#x27;s 90-second request envelope ends the boot first, before the wait&#x27;s own 120-second cap ever applies. When the budget runs out the command fails with <code>error.details.reason: boot_timeout</code> and the Simulator keeps booting, so a retry finds it further along.</li>
 <li>Android: <code>boot --platform android --device &lt;avd-name&gt;</code> launches that emulator in GUI mode when needed.</li>
 <li>Android: add <code>--headless</code> to launch without opening a GUI window.</li>
 <li>Android: <code>shutdown --platform android --device &lt;avd-name&gt;</code> stops a running emulator.</li>
 <li><code>open [app|url] [url]</code> already boots/activates the selected target when needed.</li>
-<li><code>open &lt;app&gt; --timeout &lt;ms&gt;</code> is a startup budget for that boot. A never-booted iOS Simulator runs Apple&#x27;s first-boot migration, which can take several minutes; without the flag the boot wait is capped at 120 seconds. When the budget runs out the command fails with <code>error.details.reason: boot_timeout</code> and the Simulator keeps booting, so a retry finds it further along.</li>
+<li><code>open &lt;app&gt; --timeout &lt;ms&gt;</code> is a startup budget for that boot. A never-booted iOS Simulator runs Apple&#x27;s first-boot migration, which can take several minutes; without the flag the 90-second request envelope ends the boot first, before the wait&#x27;s own 120-second cap ever applies. When the budget runs out the command fails with <code>error.details.reason: boot_timeout</code> and the Simulator keeps booting, so a retry finds it further along.</li>
 <li><code>open &lt;app&gt; --wait &lt;ms&gt;</code> waits up to that budget for a device another session is holding instead of failing at once. The open reports each poll, then either opens the device or fails with <code>DEVICE_IN_USE</code> naming the owning session and saying the budget was spent. A wait that finds the device taken again keeps waiting for the rest of its budget, so several opens can queue on one device and none of them is refused before its budget is spent. Only session contention is waited for: a device claim held by another workspace&#x27;s daemon is never retriable and returns its recovery command immediately. The wait extends the command&#x27;s timeout envelope, so a long budget does not need a longer <code>--timeout</code>.</li>
 <li><code>open &lt;url&gt;</code> deep links are supported on Android and iOS.</li>
 <li><code>open &lt;app&gt; &lt;url&gt;</code> opens a deep link on iOS.</li>
