@@ -309,7 +309,7 @@ Use `client.command.<method>()` for command-level device actions. It uses the sa
 
 Results are daemon-shaped objects with typed known fields, so command semantics stay aligned with the CLI.
 
-A failed interaction rejects with the same error the CLI prints. Read `error.details.dispatched` before you retry; [Commands](/agent-device/pr-preview/pr-3071/docs/commands.md) explains the three values.
+A failed interaction rejects with the same error the CLI prints. Read `error.details.dispatched` before you retry; [Commands](/agent-device/pr-preview/pr-3071/docs/commands.md) explains the two values.
 
 ```ts
 await client.command.wait({
