@@ -9,7 +9,7 @@
 <script defer src="/agent-device/pr-preview/pr-3071/static/js/lib-react.e84adf13b9.js"></script>
 <script defer src="/agent-device/pr-preview/pr-3071/static/js/lib-router.270f17bfa6.js"></script>
 <script defer src="/agent-device/pr-preview/pr-3071/static/js/476.52ed165336.js"></script>
-<script defer src="/agent-device/pr-preview/pr-3071/static/js/index.a12a3756c1.js"></script>
+<script defer src="/agent-device/pr-preview/pr-3071/static/js/index.6c79c4ab9c.js"></script>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="generator" content="Rspress v2.0.12">
 <meta property="og:url" content="https://oss.callstack.com/agent-device">
@@ -447,7 +447,7 @@ When an interaction fails, read <code>error.details.dispatched</code> before you
 <li><code>no</code>: the action never reached the device. Retry it as it is.</li>
 <li><code>unknown</code>: the action may have landed. Take a snapshot before you retry; a blind retry can tap, type, or navigate twice.</li>
 </ul>
-<p>An interaction on a read-only command such as <code>get</code> reports <code>no</code>: it changes nothing, so a retry is safe.
+<p>A read-only command such as <code>get</code>, <code>snapshot</code>, or <code>wait</code> reports <code>no</code>: it changes nothing, so a retry is safe.
 A failure without <code>dispatched</code> gives no such guarantee. Treat it as <code>unknown</code>.
 <code>type</code> accepts text only. Do not pass <code>@ref</code> to <code>type</code>; use <code>fill @ref &quot;text&quot;</code> to target a field directly, or <code>press @ref</code> then <code>type &quot;text&quot;</code> to append in the focused field.
 If <code>type</code> reports <code>TEXT_INPUT_NOT_FOCUSED</code>, focus a visible text input and retry; when accessibility does not expose the input, use a coordinate focus command before typing.
