@@ -9,7 +9,7 @@
 <script defer src="/agent-device/pr-preview/pr-3072/static/js/lib-react.e84adf13b9.js"></script>
 <script defer src="/agent-device/pr-preview/pr-3072/static/js/lib-router.270f17bfa6.js"></script>
 <script defer src="/agent-device/pr-preview/pr-3072/static/js/476.52ed165336.js"></script>
-<script defer src="/agent-device/pr-preview/pr-3072/static/js/index.9f950c58d9.js"></script>
+<script defer src="/agent-device/pr-preview/pr-3072/static/js/index.bf23f0ae6e.js"></script>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="generator" content="Rspress v2.0.12">
 <meta property="og:url" content="https://oss.callstack.com/agent-device">
@@ -66,11 +66,13 @@ target shows up. The wait covers only a target that is not on screen yet: a targ
 covered, off-screen, or matched by more than one element fails at once, as it does live.</p>
 </li>
 <li>
-<p>When the target never appears, the step fails with the same <code>selector_not_found</code> error as a live
-command, and <code>error.details.readiness</code> says how long it waited and how many times it looked
-(<code>waitedMs</code>, <code>polls</code>, <code>end</code>). If the app stops exposing an accessibility tree during the wait,
-the step fails with <code>error.details.reason: capture_sparse</code> instead; take a snapshot to see
-where the app is.</p>
+<p>When the target never appears, replay stops with <code>REPLAY_DIVERGENCE</code>, and
+<code>error.details.readiness</code> says how long the step waited and how many times it looked (<code>waitedMs</code>,
+<code>polls</code>, <code>end</code>). For a step recorded with a target annotation (the <code># agent-device:target-v1</code>
+line above it), <code>error.details.divergence.kind</code> is <code>selector-miss</code> and the step is never sent.
+For a step without an annotation, <code>error.details.reason</code> is <code>selector_not_found</code>, as for a live
+command. If the app shows an empty accessibility tree during that wait, <code>error.details.reason</code>
+is <code>capture_sparse</code> instead; take a snapshot to see where the app is.</p>
 </li>
 </ul>
 <h2 class="rp-toc-include" id="run-maestro-compatibility-flows"><a href="#run-maestro-compatibility-flows" class="rp-header-anchor rp-link" aria-hidden="true">#</a>Run Maestro compatibility flows</h2>
@@ -341,13 +343,14 @@ steps before resuming.</p>
 <li>Validate quoting in <code>.ad</code> lines (unclosed quotes are rejected).</li>
 </ul>
 </li>
-<li>A <code>press</code> or <code>click</code> step fails with <code>selector_not_found</code>, but the element is on the screenshot:
+<li>A <code>press</code> or <code>click</code> step fails because its target was not found, but the element is on the
+screenshot:
 <ul>
-<li>Check <code>error.details.readiness.end</code>. <code>expired</code> means the element was not in the accessibility
-tree for the whole 2-second wait: the selector is wrong for this build, or the element is not
-exposed to accessibility. <code>sparse</code> means the app showed an empty tree: the screen was
-mid-transition or the app had left. Add a <code>wait</code> step for a landmark on the new screen before
-the press.</li>
+<li>A <code>selector-miss</code> divergence, or <code>error.details.readiness.end: expired</code>, means the element was
+not in the accessibility tree for the whole 2-second wait: the selector is wrong for this
+build, or the element is not exposed to accessibility. <code>readiness.end: sparse</code> means the app
+showed an empty tree: the screen was mid-transition or the app had left. Add a <code>wait</code> step for
+a landmark on the new screen before the press.</li>
 </ul>
 </li>
 <li>Maestro compatibility flow fails on unsupported syntax:
