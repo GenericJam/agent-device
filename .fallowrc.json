@@ -86,7 +86,7 @@
       "exports": ["buildAppNotInstalledError", "resolveIosAppAlias"]
     },
     {
-      "comment": "The app-resolution package facade is consumed through workspace package exports. Fallow does not follow that package boundary, so keep only its externally consumed helper that has no visible production edge here.",
+      "comment": "The app-resolution package facade is consumed through workspace package exports and through the memoized loadAppResolution() dynamic import in src/platform-runtime-apple-application-tools.ts. Fallow follows neither, so keep the list to the members those two consumers read: buildAppNotInstalledError (package exports) and detectSoleRunningIosSimulatorApp (the loader).",
       "file": "packages/platform-apple/src/app-resolution-facade.ts",
       "exports": ["buildAppNotInstalledError", "detectSoleRunningIosSimulatorApp"]
     },
