@@ -9,7 +9,7 @@
 <script defer src="/agent-device/pr-preview/pr-3090/static/js/lib-react.e84adf13b9.js"></script>
 <script defer src="/agent-device/pr-preview/pr-3090/static/js/lib-router.270f17bfa6.js"></script>
 <script defer src="/agent-device/pr-preview/pr-3090/static/js/476.52ed165336.js"></script>
-<script defer src="/agent-device/pr-preview/pr-3090/static/js/index.e064fb000d.js"></script>
+<script defer src="/agent-device/pr-preview/pr-3090/static/js/index.c4f5620607.js"></script>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="generator" content="Rspress v2.0.12">
 <meta property="og:url" content="https://oss.callstack.com/agent-device">
@@ -451,7 +451,7 @@ When an interaction fails, read <code>error.details.dispatched</code> before you
 On Android, a command that first dismissed a blocking system dialog or an ANR prompt still reports as if that dismissal had not happened: a read stays <code>no</code>, and a mutation keeps its own verdict. The dismissal is not counted as a dispatched step.
 Once any step of a request reached the device, its failure is <code>unknown</code>, and <code>error.details.dispatchedSteps</code> counts those steps. A <code>batch</code> or a replay reports <code>no</code> only when none of its executed steps changed the app.
 A failure without <code>dispatched</code> gives no such guarantee. Treat it as <code>unknown</code>.
-On a WebDriver-backed device cloud, a driver that does not implement the route a command needs fails with <code>error.details.reason: webdriver_route_unsupported</code> and <code>dispatched: no</code>; the driver answered before it ran anything, so the failure is about the cloud&#x27;s driver, not the device. On that transport, only a request that reads and changes nothing is ever resent after an ambiguous failure; a request that can change the app is sent once.
+On a WebDriver-backed device cloud, a request whose driver does not implement its route fails with <code>error.details.reason: webdriver_route_unsupported</code> and <code>dispatched: no</code>; the driver answered before it ran anything, so the failure is about the cloud&#x27;s driver, not the device. A command with a sibling route (<code>orientation</code> tries two) consumes that refusal and tries the other; only when every route is refused does the command fail. After an ambiguous failure on that transport, only a request that reads and changes nothing is resent; a request that can change the app is sent once.
 <code>type</code> accepts text only. Do not pass <code>@ref</code> to <code>type</code>; use <code>fill @ref &quot;text&quot;</code> to target a field directly, or <code>press @ref</code> then <code>type &quot;text&quot;</code> to append in the focused field.
 If <code>type</code> reports <code>TEXT_INPUT_NOT_FOCUSED</code>, focus a visible text input and retry; when accessibility does not expose the input, use a coordinate focus command before typing.
 On iOS, if <code>type &quot;\n&quot;</code> reports <code>TEXT_INPUT_SYNTHESIS_UNAVAILABLE</code> after tapping a field while the software keyboard is hidden, show the software keyboard, then retry. The runner reports this error instead of risking input through an unreliable text-entry path.
