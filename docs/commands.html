@@ -9,7 +9,7 @@
 <script defer src="/agent-device/static/js/lib-react.e84adf13b9.js"></script>
 <script defer src="/agent-device/static/js/lib-router.270f17bfa6.js"></script>
 <script defer src="/agent-device/static/js/476.52ed165336.js"></script>
-<script defer src="/agent-device/static/js/index.ff90242fd4.js"></script>
+<script defer src="/agent-device/static/js/index.56d3fdefc6.js"></script>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="generator" content="Rspress v2.0.12">
 <meta property="og:url" content="https://oss.callstack.com/agent-device">
@@ -970,6 +970,9 @@ coordinate <code>fill</code>, <code>swipe</code>, <code>scroll</code>, a hardwar
 </li>
 <li>
 <p>Keep the scale default unset, or use <code>--scale 1</code>, when full-resolution screenshots are required for reusable pixel-diff baselines.</p>
+</li>
+<li>
+<p>On single-display iOS simulators and Android devices, the screenshot result reports <code>displayRotation</code> (<code>portrait</code>, <code>portrait-upside-down</code>, <code>landscape-left</code>, or <code>landscape-right</code>): the rotation the display rendered the capture in. The field is best-effort. It is absent when the device returns no reading in time, on other targets, and on devices with more than one display, such as foldables, where no single rotation is known to pair with the image. The saved image is always upright, so a landscape value pairs with a landscape image. The daemon <code>/artifacts</code> inventory reports the same value on the screenshot entry, including the fallback screenshot a sparse <code>snapshot</code> takes.</p>
 </li>
 <li>
 <p><code>screenshot --overlay-refs</code> captures a fresh full snapshot and burns visible <code>@eN</code> refs plus their target rectangles into the saved PNG.</p>
