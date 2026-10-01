@@ -264,6 +264,11 @@
       "exports": ["createAgentDevice", "localCommandPolicy"]
     },
     {
+      "comment": "The contracts snapshot façade must re-export every symbol of ../snapshot-scope.ts (scripts/layering/package-boundaries.test.ts, façade exhaustiveness); callers import it from @agent-device/contracts/snapshot-scope, so the façade copy has no consumer.",
+      "file": "packages/contracts/src/facades/snapshot.ts",
+      "exports": ["findSnapshotScopeRange"]
+    },
+    {
       "comment": "Test fixtures: every *.fixtures.ts builds doubles for co-located *.test.ts files (several import `vi` directly) and none is imported by production source, so --production analysis sees no consumer for any of them. Scoped to unused-exports rather than ignorePatterns so fixtures stay inside every other Fallow rule (health, dead-code, cycles); `*` rather than today's three symbols because the property being asserted is per-file, not per-symbol.",
       "file": "**/*.fixtures.ts",
       "exports": ["*"]

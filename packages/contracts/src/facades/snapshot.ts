@@ -1,5 +1,6 @@
 export { isScrollableNodeLike, isScrollableType } from '../snapshot-scroll.ts';
 export {
+  findSnapshotScopeRange,
   matchesSnapshotScope,
   normalizeSnapshotScope,
   reindexSnapshotNodes,
