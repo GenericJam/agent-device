@@ -78,7 +78,7 @@ agent-device fold open
 - `open` recognizes the prompt by its English title. On a Simulator set to another language, it leaves the prompt on screen and returns as if no prompt appeared; answer it with `alert accept` or `alert dismiss`. Run with `--debug` to see the title `open` did not recognize.
 - `open` answers only a prompt that is on screen when it first checks the app. A prompt that appears after `open` has already seen your app stays on screen; answer it with `alert accept` or `alert dismiss`.
 - If the URL's scheme belongs to a different installed app, `open` does not answer the prompt. The command fails with `details.reason: launch_confirmation_foreign_app`; `details.foreignAppBundleId` names that app. The prompt stays on screen: close it with `alert dismiss`, then pass a launch URL whose scheme your app handles.
-- If no installed app owns the scheme, or more than one does (for example a debug and a release build), `open` cannot tell which app would receive the URL. It leaves the prompt on screen and returns as if no prompt appeared; answer it with `alert accept` or `alert dismiss`.
+- If `open` cannot identify a single installed app that owns the scheme, it does not know which app would receive the URL, so it leaves the prompt on screen and returns as if no prompt appeared; answer it with `alert accept` or `alert dismiss`. This happens when no installed app declares the scheme, when more than one does (for example a debug and a release build), and when the app list or an app's `Info.plist` could not be read.
 - `open <app> --launch-console <path>` captures launch-time stdout/stderr for direct iOS simulator app launches. It is not valid for URL opens or
   non-simulator targets.
 - `open --platform macos --surface app|frontmost-app|desktop|menubar` selects the macOS session surface explicitly. `app` is the default when an app argument is provided.
@@ -455,6 +455,7 @@ agent-device alert dismiss
 - Use `alert get` for an immediate cheap check. Use `alert wait <short-ms>` only when a prompt may appear after async work.
 - Within an iOS XCTest execution, `accept` and `dismiss` activate the selected button once, then only observe until the alert disappears, its presentation changes, or the deadline expires. A shared button label never triggers a second coordinate tap. A changed presentation can be an updated original alert or a replacement; it does not prove a permission was granted. Verify the application outcome separately.
 - An unreadable or ambiguous post-action capture fails with `error.details.runnerErrorCode: ALERT_CONFIRMATION_UNAVAILABLE`; an expired runner deadline uses `ALERT_DEADLINE_EXCEEDED` (the outer command watchdog can also report a timeout). Neither proves absence or that no action occurred. Identical-looking alerts remain unconfirmed. Inspect the current alert before deciding whether to act again.
+- iOS runner refusals carry `error.details.reason`: `runner_busy` means the runner was still finishing an earlier command and ran nothing (`dispatched: no`); `runner_main_thread_timeout` means the runner gave up waiting on the app, and the action may still land (`dispatched: unknown`).
 - Android support is snapshot-derived. If `alert` reports no alert but a sheet is visible, treat it as app-owned UI and use `snapshot -i` plus `press` by visible label/ref.
 - If an iOS permission sheet is visible in `snapshot` or `screenshot` but `alert accept` reports no alert, fall back to a scoped `snapshot -i -s "<visible label>"` plus `press @ref`; not every simulator permission surface is exposed as a native XCTest alert.
 
@@ -489,6 +490,14 @@ agent-device gesture transform 200 420 80 -40 2 35 700 # combined pan, zoom, and
 ```
 
 `fill` clears then types. `type` does not clear.
+When an interaction fails, read `error.details.dispatched` before you retry:
+
+- `no`: the action never reached the device. Retry it as it is.
+- `unknown`: the action may have landed. Take a snapshot before you retry; a blind retry can tap, type, or navigate twice.
+
+A read-only command such as `get`, `snapshot`, or `wait` reports `no`: a retry repeats no action the app can see. This includes `record`, `trace`, and `perf`, whose recorder and profiler controls the device refuses to repeat.
+Once any step of a request reached the device, its failure is `unknown`, and `error.details.dispatchedSteps` counts those steps. A `batch` or a replay reports `no` only when none of its executed steps changed the app.
+A failure without `dispatched` gives no such guarantee. Treat it as `unknown`.
 `type` accepts text only. Do not pass `@ref` to `type`; use `fill @ref "text"` to target a field directly, or `press @ref` then `type "text"` to append in the focused field.
 If `type` reports `TEXT_INPUT_NOT_FOCUSED`, focus a visible text input and retry; when accessibility does not expose the input, use a coordinate focus command before typing.
 On iOS, if `type "\n"` reports `TEXT_INPUT_SYNTHESIS_UNAVAILABLE` after tapping a field while the software keyboard is hidden, show the software keyboard, then retry. The runner reports this error instead of risking input through an unreliable text-entry path.
