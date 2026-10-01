@@ -30,9 +30,9 @@ import {
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 import type { DaemonRequest } from '../daemon-request.ts';
+import { LeaseRegistry } from '../lease-registry.ts';
 import { discloseRequestDispatch } from '../request-dispatch-disclosure.ts';
 import { createRequestDispatchLedger } from '../request-dispatch-ledger.ts';
-import { LeaseRegistry } from '../lease-registry.ts';
 import type { SessionState } from '../session-state.ts';
 import { clearAndroidObservationFixture } from './android-observation-fixture.ts';
 import {
@@ -370,3 +370,26 @@ test('a command without a declared recording effect rethrows its failure unnorma
     (error: unknown) => error === thrown,
   );
 });
+
+test.each([
+  ['a read that threw before any step', 'get', 0, 'no', undefined],
+  ['a mutation that threw after one recorded step', 'press', 1, 'unknown', 1],
+])(
+  'a thrown value that is not an AppError is normalized and disclosed: %s',
+  async (_case, command, dispatchedSteps, dispatched, disclosedSteps) => {
+    const req: DaemonRequest = { token: 't', session: SESSION, command, positionals: [] };
+    const ledger = createRequestDispatchLedger();
+    ledger.dispatchedSteps = dispatchedSteps;
+    await assert.rejects(
+      discloseRequestDispatch(req, ledger, async () => {
+        throw { reason: 'not an Error' };
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof AppError);
+        assert.equal(error.details?.dispatched, dispatched);
+        assert.equal(error.details?.dispatchedSteps, disclosedSteps);
+        return true;
+      },
+    );
+  },
+);
