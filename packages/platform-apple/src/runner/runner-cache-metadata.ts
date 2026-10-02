@@ -276,10 +276,18 @@ export function resolveExpectedRunnerCacheMetadata(
 // Lazy: createTtlMemo is a host capability, and module evaluation happens
 // before the composition root binds the host. Only a complete, parsed
 // fingerprint is ever memoized, so nothing unavailable can outlive the probe
-// that could not answer.
+// that could not answer. The key carries a client-chosen DEVELOPER_DIR, so an
+// entry expires once no request has used it for TOOLCHAIN_FINGERPRINT_TTL_MS:
+// a dir no client uses any more must not stay for the daemon's lifetime. A hit
+// renews the entry, so a failure report can name the Xcode a decision read for
+// at least TOOLCHAIN_FINGERPRINT_TTL_MS after that read (the default start budget).
+const TOOLCHAIN_FINGERPRINT_TTL_MS = 10 * 60_000;
 let lazyToolchainFingerprintCache: TtlMemo<string, RunnerToolchainFingerprint> | undefined;
 function toolchainFingerprintCache(): TtlMemo<string, RunnerToolchainFingerprint> {
-  lazyToolchainFingerprintCache ??= createTtlMemo<string, RunnerToolchainFingerprint>();
+  lazyToolchainFingerprintCache ??= createTtlMemo<string, RunnerToolchainFingerprint>({
+    ttlMs: TOOLCHAIN_FINGERPRINT_TTL_MS,
+    scheduleExpiry: true,
+  });
   return lazyToolchainFingerprintCache;
 }
 
@@ -296,7 +304,10 @@ function requireRunnerToolchainFingerprint(
   clock.throwIfCanceled();
   const cacheKey = toolchainFingerprintCacheKey(sdkName);
   const cached = toolchainFingerprintCache().get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    toolchainFingerprintCache().set(cacheKey, cached);
+    return cached;
+  }
   const fingerprint = readRunnerToolchainFingerprint(sdkName, clock);
   if (!fingerprint.ok) throw unavailableToolchainError(fingerprint.failures);
   toolchainFingerprintCache().set(cacheKey, fingerprint.value);
@@ -313,8 +324,9 @@ function toolchainFingerprintCacheKey(sdkName: string): string {
 
 /**
  * The selected Xcode's version as this process's runner cache decision memoized it, for a failure
- * report that names it; undefined when no decision has read the toolchain. Never probes: a report
- * must not wait on the toolchain it describes.
+ * report that names it; undefined when no decision has read the toolchain in the last
+ * `TOOLCHAIN_FINGERPRINT_TTL_MS`. Never probes: a report must not wait on the toolchain it
+ * describes.
  */
 export function memoizedRunnerXcodeVersion(device: DeviceInfo): string | undefined {
   return toolchainFingerprintCache().get(

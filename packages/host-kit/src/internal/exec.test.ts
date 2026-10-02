@@ -5,6 +5,7 @@ import path from 'node:path';
 import { flushDiagnosticsToSessionFile, withDiagnosticsScope } from './diagnostics.ts';
 import {
   coerceExecResult,
+  commandDeveloperDir,
   isCommandTimeoutError,
   requireExecSuccess,
   runCmd,
@@ -560,6 +561,34 @@ test.sequential('without a developer dir the toolchain hint points at xcode-sele
     );
   } finally {
     if (saved !== undefined) process.env.DEVELOPER_DIR = saved;
+  }
+});
+
+test.sequential('a request that clears DEVELOPER_DIR is not reported under the daemon one', async () => {
+  const saved = process.env.DEVELOPER_DIR;
+  process.env.DEVELOPER_DIR = '/daemon/Developer';
+  try {
+    // The child runs without a usable DEVELOPER_DIR (xcode-select decides), so the key and report
+    // must too, whether the request clears it or carries it unset.
+    for (const requestEnv of [{ DEVELOPER_DIR: '' }, { DEVELOPER_DIR: undefined }]) {
+      await withRequestCommandEnv(requestEnv, async () => {
+        assert.equal((await runCmd(process.execPath, PRINT_DEVELOPER_DIR)).stdout, '');
+        assert.equal(commandDeveloperDir(), undefined);
+        assert.throws(
+          () => requireExecSuccess(XCRUN_DEVICECTL_NOT_FOUND, 'Failed to list devices'),
+          (error: unknown) => {
+            assert.ok(error instanceof AppError);
+            assert.equal(error.details?.developerDir, null);
+            assert.match(String(error.details?.hint), /selected by xcode-select/);
+            return true;
+          },
+        );
+      });
+    }
+    assert.equal(commandDeveloperDir(), '/daemon/Developer');
+  } finally {
+    if (saved === undefined) delete process.env.DEVELOPER_DIR;
+    else process.env.DEVELOPER_DIR = saved;
   }
 });
 

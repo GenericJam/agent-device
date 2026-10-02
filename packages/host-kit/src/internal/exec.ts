@@ -121,10 +121,15 @@ export async function withRequestCommandEnv<T>(
 
 /**
  * The `DEVELOPER_DIR` a command spawned here would run with: the request's, else this process's.
- * Undefined means `xcrun` falls back to `xcode-select`.
+ * A request that sets it, even to empty, overrides this process's value just as `resolveSpawnEnv`
+ * does. Undefined means `xcrun` falls back to `xcode-select`.
  */
 export function commandDeveloperDir(): string | undefined {
-  return requestCommandEnvScope.getStore()?.DEVELOPER_DIR || process.env.DEVELOPER_DIR || undefined;
+  const requestEnv = requestCommandEnvScope.getStore();
+  if (requestEnv && Object.hasOwn(requestEnv, 'DEVELOPER_DIR')) {
+    return requestEnv.DEVELOPER_DIR || undefined;
+  }
+  return process.env.DEVELOPER_DIR || undefined;
 }
 
 function resolveSpawnEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
