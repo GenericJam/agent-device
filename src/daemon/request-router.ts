@@ -410,9 +410,7 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
 
 function requestCommandEnv(req: DaemonRequest): NodeJS.ProcessEnv | undefined {
   const developerDir = req.meta?.developerDir;
-  return typeof developerDir === 'string' && developerDir.length > 0
-    ? { DEVELOPER_DIR: developerDir }
-    : undefined;
+  return typeof developerDir === 'string' ? { DEVELOPER_DIR: developerDir } : undefined;
 }
 
 const EMPTY_REQUEST_PLATFORM_PROVIDERS: RequestPlatformProviders = Object.freeze({

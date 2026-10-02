@@ -39,10 +39,10 @@ test.sequential('a request spawns its commands with its own DEVELOPER_DIR, else 
   const saved = process.env.DEVELOPER_DIR;
   process.env.DEVELOPER_DIR = '/daemon/Developer';
   try {
-    await Promise.all([devices('/a/Developer'), devices('/b/Developer'), devices()]);
+    await Promise.all([devices('/a/Developer'), devices('/b/Developer'), devices(''), devices()]);
   } finally {
     if (saved === undefined) delete process.env.DEVELOPER_DIR;
     else process.env.DEVELOPER_DIR = saved;
   }
-  expect([...seen].sort()).toEqual(['/a/Developer', '/b/Developer', '/daemon/Developer']);
+  expect([...seen].sort()).toEqual(['', '/a/Developer', '/b/Developer', '/daemon/Developer']);
 });

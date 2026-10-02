@@ -72,7 +72,8 @@ One-off `npx` usage is fine for humans and scripts that intentionally fetch from
 - Xcode for iOS simulator/device automation (`simctl` + `devicectl`). `xcrun` picks the Xcode from
   `DEVELOPER_DIR`, otherwise `xcode-select -p`. A `DEVELOPER_DIR` exported in the shell running
   `agent-device` applies to the Apple tools a local daemon runs for that command; without it, the
-  daemon uses the environment it was started in.
+  daemon uses the environment it was started in. Set `DEVELOPER_DIR=""` to use the daemon host's
+  `xcode-select` selection instead.
 - Android SDK / ADB for Android
 - HarmonyOS Command Line Tools for HarmonyOS (`hdc` available through `HDC_SDK_PATH`, `DEVECO_SDK_HOME`, or `HARMONYOS_COMMAND_LINE_TOOLS`)
 - Amazon Vega Developer Tools and an SDK-matched Vega Virtual Device for Vega OS TV

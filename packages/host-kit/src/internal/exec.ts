@@ -106,11 +106,7 @@ export async function withoutCommandExecutorOverride<T>(fn: () => Promise<T>): P
 
 const requestCommandEnvScope = new AsyncLocalStorage<NodeJS.ProcessEnv>();
 
-/**
- * Overlays `env` on every command spawned inside `fn`. The daemon outlives the shell that started
- * it, so a variable a client exports (such as `DEVELOPER_DIR`, which picks the Xcode `xcrun`
- * resolves) reaches its commands only through this per-request scope.
- */
+/** Overlays request environment values on spawned commands without changing `process.env`. */
 export async function withRequestCommandEnv<T>(
   env: NodeJS.ProcessEnv | undefined,
   fn: () => Promise<T>,
@@ -119,11 +115,7 @@ export async function withRequestCommandEnv<T>(
   return await requestCommandEnvScope.run(env, fn);
 }
 
-/**
- * The `DEVELOPER_DIR` a command spawned here would run with: the request's, else this process's.
- * A request that sets it, even to empty, overrides this process's value just as `resolveSpawnEnv`
- * does. Undefined means `xcrun` falls back to `xcode-select`.
- */
+/** Effective toolchain selection; an explicitly empty request value selects `xcode-select`. */
 export function commandDeveloperDir(): string | undefined {
   const requestEnv = requestCommandEnvScope.getStore();
   if (requestEnv && Object.hasOwn(requestEnv, 'DEVELOPER_DIR')) {
@@ -712,9 +704,7 @@ function createExitError(
   );
 }
 
-// xcrun prints this line (and exits 72) when the selected developer dir has no such tool, e.g. when
-// xcode-select points at the Command Line Tools, which ship no simctl or devicectl. The wrapped tool
-// never prints it, so it identifies the failure even for callers that pass no cmd.
+// xcrun itself emits this line, including when the caller supplies no command metadata.
 const XCRUN_TOOL_NOT_FOUND_STDERR = /xcrun: error: unable to find utility "([^"]+)"/;
 
 function xcrunToolNotFoundDetails(stderr: string): Record<string, unknown> {
@@ -732,14 +722,8 @@ function xcrunToolNotFoundDetails(stderr: string): Record<string, unknown> {
 }
 
 /**
- * Guard an exec result that was obtained with `allowFailure: true`: throw a
- * curated COMMAND_FAILED (with `processExitError` set, so normalizeError
- * appends the stderr excerpt) on non-zero exit, and pass the result through
- * otherwise. This is the standard shape for "run tool, fail with a specific
- * message" call sites — it works under every executor (local spawn, tool
- * providers, command overrides) because it checks the returned result rather
- * than relying on the spawn layer to throw. `extra` accepts a function so
- * failure-only work (hint classification) is not paid on the success path.
+ * Raises COMMAND_FAILED for a non-zero result, preserving stderr for normalizeError.
+ * Passes successful results through unchanged and evaluates functional `extra` only on failure.
  */
 export function requireExecSuccess<
   R extends Pick<ExecResult, 'stdout' | 'stderr'> & Readonly<{ exitCode: number | null }>,
@@ -757,10 +741,7 @@ export function requireExecSuccess<
 }
 
 /**
- * COMMAND_FAILED details for a non-zero exec result. `processExitError: true`
- * lets normalizeError surface the first meaningful stderr line as the user-facing
- * message instead of the generic wrap message. A process killed by a signal reports
- * no exit code, so the raw child_process null is accepted as well.
+ * Exit-failure details for normalizeError, including null exit codes from signalled processes.
  */
 export function execFailureDetails(
   result: Pick<ExecResult, 'stdout' | 'stderr'> & Readonly<{ exitCode: number | null }>,
@@ -779,7 +760,6 @@ export function execFailureDetails(
 
 type CommandAbort = { readonly didAbort: boolean };
 
-// Error to reject a spawned child's `error` event with: canceled if we aborted, else a spawn error.
 function spawnRejectionError(
   abort: CommandAbort,
   executable: string,
@@ -792,8 +772,6 @@ function spawnRejectionError(
     : createSpawnError(executable, cmd, args, err);
 }
 
-// Failure (if any) for a spawned child's `close` event: canceled if we aborted, an exit error on
-// a non-zero code unless allowed, otherwise null (the command resolves successfully).
 function commandCloseFailure(
   abort: CommandAbort,
   executable: string,
@@ -885,11 +863,8 @@ function normalizeTimeoutMs(value: number | undefined): number | undefined {
 }
 
 /**
- * A command this module asked to be killed is finished once its child is gone, without
- * waiting for the stdio pipes to drain: a descendant that inherited them keeps `close`
- * from arriving, and the request behind the command — and the device lock it holds —
- * would wait forever. Whether the kill request or the child's exit arrives first is not
- * a question each caller should answer, so both report here and settlement happens once.
+ * A killed command settles when its direct child exits: descendants can keep inherited pipes
+ * open indefinitely. Both kill/exit orderings must settle once without waiting for `close`.
  */
 type CommandKillSettlement = {
   /** Signals the command's process tree, then settles the command if its child is gone. */
@@ -947,15 +922,9 @@ function watchCommandAbort(
 }
 
 /**
- * Signals the process group led by `pid` — the tree a detached child spawned — best-effort,
- * and reports whether the write went through. One seam for every group kill in host-kit, so
- * a caller outside this module can mock it instead of delivering a real signal to a
- * fabricated pid (#1824). `host-process.ts` reaches it from here rather than the reverse:
- * that module imports `exec.ts` for `runCmd`, and a value import back up would close a cycle
- * the layering rules reject.
- *
- * A pid that is not a positive integer is refused without signalling: `0` would address this
- * process's own group, and a negative one every process this user owns.
+ * Best-effort process-group signalling, shared by host-kit callers. This lives below
+ * host-process.ts to avoid an import cycle. Only positive integer pids are accepted:
+ * zero targets this process's group, and negative values can target unrelated processes.
  */
 export function signalProcessGroupBestEffort(pid: number, signal: NodeJS.Signals): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -967,13 +936,7 @@ export function signalProcessGroupBestEffort(pid: number, signal: NodeJS.Signals
   }
 }
 
-/**
- * A detached command owns a process group, and the descendants we are trying to reach are
- * its members — which is what keeps the group id reserved. So the group is still signalled
- * after the direct child is reaped: those members are holding the pipes this command is
- * waiting on. The one group-signal seam reports whether anything was reached rather than
- * throwing, and a group that is gone or not ours to signal is the case it reports false.
- */
+// Surviving descendants keep a detached process group reserved after its direct child exits.
 function killProcessTree(
   child: ChildProcess,
   options: Pick<ExecOptions, 'detached' | 'kill'>,
@@ -982,10 +945,7 @@ function killProcessTree(
     signalProcessTree(child, options.detached, 'SIGKILL');
     return;
   }
-  // The child is given its chance to clean up, and the escalation is what keeps that
-  // chance from becoming a way to outlive the deadline. The timer holds nothing open:
-  // a child that exits on the first signal clears it, and a worker shutting down owes
-  // a child that ignored the signal nothing further.
+  // Escalation bounds graceful cleanup; the unref timer cannot keep a worker alive.
   signalProcessTree(child, options.detached, options.kill.signal);
   const escalation = setTimeout(
     () => signalProcessTree(child, options.detached, 'SIGKILL'),
@@ -1004,10 +964,7 @@ function signalProcessTree(
     signalProcessGroupBestEffort(child.pid, signal);
     return;
   }
-  // A non-detached child leaves its pid free for the kernel to hand to an unrelated
-  // process once Node has reaped it, so a late signal from a stale deadline could
-  // strike a stranger. Nothing waits for a kill of a child that is already gone:
-  // settlement happens on `exit`.
+  // A reaped, non-detached child can have its pid reassigned to an unrelated process.
   if (child.exitCode !== null || child.signalCode !== null) return;
   child.kill(signal);
 }

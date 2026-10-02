@@ -140,7 +140,8 @@ function buildLocalHostEnvMeta(
   info: DaemonInfo,
 ): Pick<NonNullable<DaemonRequest['meta']>, 'developerDir'> {
   const developerDir = process.env.DEVELOPER_DIR;
-  return developerDir && !isRemoteDaemon(info) ? { developerDir } : {};
+  if (isRemoteDaemon(info)) return { developerDir: undefined };
+  return developerDir !== undefined ? { developerDir } : {};
 }
 
 function buildTransportRequestMeta(
