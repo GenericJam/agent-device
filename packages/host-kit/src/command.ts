@@ -21,5 +21,6 @@ export {
   runCmdSync,
   whichCmd,
   withCommandExecutorOverride,
+  withRequestCommandEnv,
   withoutCommandExecutorOverride,
 } from './internal/exec.ts';

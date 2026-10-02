@@ -13,6 +13,7 @@ import {
   runCmdStreaming,
   runCmdSync,
   whichCmd,
+  withRequestCommandEnv,
   type ExecResult,
 } from './exec.ts';
 import { AppError } from '@agent-device/kernel/errors';
@@ -459,3 +460,55 @@ test('isCommandTimeoutError reads the structured timeout, not the message text',
   assert.equal(isCommandTimeoutError(new Error('timed out after 10ms')), false);
   assert.equal(isCommandTimeoutError(undefined), false);
 });
+
+const PRINT_DEVELOPER_DIR = ['-e', 'process.stdout.write(process.env.DEVELOPER_DIR ?? "")'];
+
+test('a request command env reaches spawned commands; outside it they inherit the daemon env', async () => {
+  const daemonEnv = { ...process.env, DEVELOPER_DIR: '/daemon/Developer' };
+  const inherited = await runCmd(process.execPath, PRINT_DEVELOPER_DIR, { env: daemonEnv });
+  assert.equal(inherited.stdout, '/daemon/Developer');
+
+  const [first, second, unscoped] = await Promise.all([
+    withRequestCommandEnv({ DEVELOPER_DIR: '/a/Developer' }, async () =>
+      runCmd(process.execPath, PRINT_DEVELOPER_DIR, { env: daemonEnv }),
+    ),
+    withRequestCommandEnv({ DEVELOPER_DIR: '/b/Developer' }, async () =>
+      runCmdSync(process.execPath, PRINT_DEVELOPER_DIR),
+    ),
+    withRequestCommandEnv(undefined, async () =>
+      runCmd(process.execPath, PRINT_DEVELOPER_DIR, { env: daemonEnv }),
+    ),
+  ]);
+  assert.equal(first.stdout, '/a/Developer');
+  assert.equal(second.stdout, '/b/Developer');
+  assert.equal(unscoped.stdout, '/daemon/Developer');
+});
+
+test.runIf(process.platform !== 'win32')(
+  'xcrun tool-not-found failures name the developer dir and how to change it',
+  async () => {
+    const binDir = mkdtempForTestSync('agent-device-exec-xcrun-');
+    const xcrun = path.join(binDir, 'xcrun');
+    fs.writeFileSync(
+      xcrun,
+      '#!/bin/sh\necho \'xcrun: error: unable to find utility "simctl", not a developer tool or in PATH\' >&2\nexit 72\n',
+      { mode: 0o755 },
+    );
+    await assert.rejects(
+      withRequestCommandEnv({ DEVELOPER_DIR: '/Library/Developer/CommandLineTools' }, async () =>
+        runCmd(xcrun, ['simctl', 'list']),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof AppError);
+        assert.equal(error.details?.reason, 'xcrun-tool-not-found');
+        assert.equal(error.details?.developerDir, '/Library/Developer/CommandLineTools');
+        assert.match(
+          String(error.details?.hint),
+          /simctl in DEVELOPER_DIR \/Library\/Developer\/CommandLineTools/,
+        );
+        assert.match(String(error.details?.hint), /xcode-select -s/);
+        return true;
+      },
+    );
+  },
+);

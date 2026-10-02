@@ -104,6 +104,27 @@ export async function withoutCommandExecutorOverride<T>(fn: () => Promise<T>): P
   return await commandExecutorOverrideScope.run(undefined, fn);
 }
 
+const requestCommandEnvScope = new AsyncLocalStorage<NodeJS.ProcessEnv>();
+
+/**
+ * Overlays `env` on every command spawned inside `fn`. The daemon outlives the shell that started
+ * it, so a variable a client exports (such as `DEVELOPER_DIR`, which picks the Xcode `xcrun`
+ * resolves) reaches its commands only through this per-request scope.
+ */
+export async function withRequestCommandEnv<T>(
+  env: NodeJS.ProcessEnv | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!env) return await fn();
+  return await requestCommandEnvScope.run(env, fn);
+}
+
+function resolveSpawnEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
+  const requestEnv = requestCommandEnvScope.getStore();
+  if (!requestEnv) return env;
+  return { ...(env ?? process.env), ...requestEnv };
+}
+
 export async function runCmd(
   cmd: string,
   args: readonly string[],
@@ -154,7 +175,7 @@ function runSpawnedCommand(
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: options.cwd,
-      env: options.env,
+      env: resolveSpawnEnv(options.env),
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: options.detached,
       windowsHide: true,
@@ -324,7 +345,7 @@ export function runCmdSync(
   const executable = normalizeExecutableCommand(cmd);
   const result = spawnSync(executable, args, {
     cwd: options.cwd,
-    env: options.env,
+    env: resolveSpawnEnv(options.env),
     stdio: ['pipe', 'pipe', 'pipe'],
     encoding: options.binaryStdout ? undefined : 'utf8',
     input: options.stdin,
@@ -391,7 +412,7 @@ export function runCmdDetachedMonitored(
   const executable = normalizeExecutableCommand(cmd);
   const child = spawn(executable, args, {
     cwd: options.cwd,
-    env: options.env,
+    env: resolveSpawnEnv(options.env),
     stdio: options.stdio ?? 'ignore',
     detached: true,
     windowsHide: true,
@@ -423,7 +444,7 @@ export function runCmdBackground(
   const execTrace = createExecTraceContext();
   const child = spawn(executable, args, {
     cwd: options.cwd,
-    env: options.env,
+    env: resolveSpawnEnv(options.env),
     stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
     detached: options.detached,
     windowsHide: true,
@@ -674,8 +695,38 @@ function createExitError(
   return new AppError(
     'COMMAND_FAILED',
     `${executable} exited with code ${exitCode}`,
-    execFailureDetails({ stdout, stderr, exitCode }, { cmd, args }),
+    execFailureDetails(
+      { stdout, stderr, exitCode },
+      { cmd, args, ...xcrunToolNotFoundDetails(cmd, args, exitCode) },
+    ),
   );
+}
+
+// xcrun exits 72 (EX_OSFILE) when the selected developer dir has no such tool, e.g. when
+// xcode-select points at the Command Line Tools, which ship no simctl or devicectl.
+const XCRUN_TOOL_NOT_FOUND_EXIT_CODE = 72;
+
+function xcrunToolNotFoundDetails(
+  cmd: string,
+  args: readonly string[],
+  exitCode: number,
+): Record<string, unknown> {
+  if (path.basename(cmd) !== 'xcrun' || exitCode !== XCRUN_TOOL_NOT_FOUND_EXIT_CODE) return {};
+  const developerDir =
+    requestCommandEnvScope.getStore()?.DEVELOPER_DIR ?? process.env.DEVELOPER_DIR;
+  const source = developerDir
+    ? `DEVELOPER_DIR ${developerDir}`
+    : `the xcode-select developer dir ${readXcodeSelectPath() ?? '(unknown)'}`;
+  return {
+    reason: 'xcrun-tool-not-found',
+    developerDir: developerDir ?? null,
+    hint: `xcrun could not find ${args[0] ?? 'the tool'} in ${source}. Export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer (or your Xcode's path) before running agent-device, or run sudo xcode-select -s /Applications/Xcode.app.`,
+  };
+}
+
+function readXcodeSelectPath(): string | undefined {
+  const result = spawnSync('xcode-select', ['-p'], { encoding: 'utf8', timeout: 2_000 });
+  return result.status === 0 ? result.stdout.trim() || undefined : undefined;
 }
 
 /**
