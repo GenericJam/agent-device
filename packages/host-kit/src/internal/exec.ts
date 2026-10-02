@@ -707,25 +707,14 @@ function createExitError(
   );
 }
 
-// xcrun exits 72 (EX_OSFILE) and prints `unable to find utility "<tool>"` when the selected
-// developer dir has no such tool, e.g. when xcode-select points at the Command Line Tools, which
-// ship no simctl or devicectl.
-const XCRUN_TOOL_NOT_FOUND_EXIT_CODE = 72;
+// xcrun prints this line (and exits 72) when the selected developer dir has no such tool, e.g. when
+// xcode-select points at the Command Line Tools, which ship no simctl or devicectl. The wrapped tool
+// never prints it, so it identifies the failure even for callers that pass no cmd.
 const XCRUN_TOOL_NOT_FOUND_STDERR = /xcrun: error: unable to find utility "([^"]+)"/;
 
-function xcrunToolNotFoundDetails(
-  result: Pick<ExecResult, 'stderr'> & Readonly<{ exitCode: number | null }>,
-  extra: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  const cmd = typeof extra?.cmd === 'string' ? extra.cmd : undefined;
-  const firstArg = Array.isArray(extra?.args) ? extra.args[0] : undefined;
-  const stderrTool = XCRUN_TOOL_NOT_FOUND_STDERR.exec(result.stderr)?.[1];
-  const xcrunExit72 =
-    cmd !== undefined &&
-    path.basename(cmd) === 'xcrun' &&
-    result.exitCode === XCRUN_TOOL_NOT_FOUND_EXIT_CODE;
-  if (!xcrunExit72 && !stderrTool) return {};
-  const tool = stderrTool ?? (typeof firstArg === 'string' ? firstArg : 'the tool');
+function xcrunToolNotFoundDetails(stderr: string): Record<string, unknown> {
+  const tool = XCRUN_TOOL_NOT_FOUND_STDERR.exec(stderr)?.[1];
+  if (!tool) return {};
   const developerDir = commandDeveloperDir();
   const source = developerDir
     ? `DEVELOPER_DIR ${developerDir}`
@@ -779,7 +768,7 @@ export function execFailureDetails(
     processExitError: true,
     ...extra,
     // Last: a missing tool makes a caller's hint about the device or app moot.
-    ...xcrunToolNotFoundDetails(result, extra),
+    ...xcrunToolNotFoundDetails(result.stderr),
   };
 }
 
