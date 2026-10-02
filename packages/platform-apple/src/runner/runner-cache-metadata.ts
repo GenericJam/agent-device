@@ -9,6 +9,7 @@ import {
   isRequestCanceledError,
 } from '@agent-device/kernel/errors';
 import {
+  commandDeveloperDir,
   createTtlMemo,
   Deadline,
   isCommandTimeoutError,
@@ -293,12 +294,21 @@ function requireRunnerToolchainFingerprint(
   // Before the cache, not just before the probes: a hit must not hide a cancellation.
   const clock = createToolchainProbeClock(budget);
   clock.throwIfCanceled();
-  const cached = toolchainFingerprintCache().get(sdkName);
+  const cacheKey = toolchainFingerprintCacheKey(sdkName);
+  const cached = toolchainFingerprintCache().get(cacheKey);
   if (cached) return cached;
   const fingerprint = readRunnerToolchainFingerprint(sdkName, clock);
   if (!fingerprint.ok) throw unavailableToolchainError(fingerprint.failures);
-  toolchainFingerprintCache().set(sdkName, fingerprint.value);
+  toolchainFingerprintCache().set(cacheKey, fingerprint.value);
   return fingerprint.value;
+}
+
+/**
+ * A daemon serves clients that select different Xcodes through `DEVELOPER_DIR`, so a fingerprint
+ * read under one developer dir answers only for that dir. An empty dir means xcode-select's.
+ */
+function toolchainFingerprintCacheKey(sdkName: string): string {
+  return `${commandDeveloperDir() ?? ''}\0${sdkName}`;
 }
 
 /**
@@ -308,7 +318,9 @@ function requireRunnerToolchainFingerprint(
  */
 export function memoizedRunnerXcodeVersion(device: DeviceInfo): string | undefined {
   return toolchainFingerprintCache().get(
-    resolveRunnerSdkName(resolveRunnerPlatformName(device), device.kind),
+    toolchainFingerprintCacheKey(
+      resolveRunnerSdkName(resolveRunnerPlatformName(device), device.kind),
+    ),
   )?.xcodeVersion;
 }
 

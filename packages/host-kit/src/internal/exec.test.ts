@@ -512,3 +512,69 @@ test.runIf(process.platform !== 'win32')(
     );
   },
 );
+
+const XCRUN_DEVICECTL_NOT_FOUND = {
+  stdout: '',
+  stderr: 'xcrun: error: unable to find utility "devicectl", not a developer tool or in PATH\n',
+  exitCode: 72,
+};
+
+test('an allowFailure xcrun result guarded by requireExecSuccess gets the toolchain hint over the caller hint', async () => {
+  await assert.rejects(
+    withRequestCommandEnv({ DEVELOPER_DIR: '/Library/Developer/CommandLineTools' }, async () =>
+      requireExecSuccess(XCRUN_DEVICECTL_NOT_FOUND, 'Failed to install app', {
+        cmd: 'xcrun',
+        args: ['devicectl', 'device', 'install', 'app'],
+        hint: 'Ensure the iOS device is unlocked, trusted, and available in Xcode > Devices, then retry.',
+      }),
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.message, 'Failed to install app');
+      assert.equal(error.details?.reason, 'xcrun-tool-not-found');
+      assert.match(
+        String(error.details?.hint),
+        /^xcrun could not find devicectl in DEVELOPER_DIR \/Library\/Developer\/CommandLineTools\./,
+      );
+      return true;
+    },
+  );
+});
+
+test.sequential('without a developer dir the toolchain hint points at xcode-select', () => {
+  const saved = process.env.DEVELOPER_DIR;
+  delete process.env.DEVELOPER_DIR;
+  try {
+    // No cmd/args: the call site only had the result, so xcrun's own stderr identifies the tool.
+    assert.throws(
+      () => requireExecSuccess(XCRUN_DEVICECTL_NOT_FOUND, 'Failed to list devices'),
+      (error: unknown) => {
+        assert.ok(error instanceof AppError);
+        assert.equal(error.details?.developerDir, null);
+        assert.match(
+          String(error.details?.hint),
+          /devicectl in the developer dir selected by xcode-select/,
+        );
+        return true;
+      },
+    );
+  } finally {
+    if (saved !== undefined) process.env.DEVELOPER_DIR = saved;
+  }
+});
+
+test('a non-xcrun failure keeps the caller hint', () => {
+  assert.throws(
+    () =>
+      requireExecSuccess({ stdout: '', stderr: 'boom', exitCode: 72 }, 'Failed', {
+        cmd: 'adb',
+        hint: 'caller hint',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.hint, 'caller hint');
+      assert.equal(error.details?.reason, undefined);
+      return true;
+    },
+  );
+});

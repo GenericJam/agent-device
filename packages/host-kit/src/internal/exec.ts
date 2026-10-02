@@ -119,6 +119,14 @@ export async function withRequestCommandEnv<T>(
   return await requestCommandEnvScope.run(env, fn);
 }
 
+/**
+ * The `DEVELOPER_DIR` a command spawned here would run with: the request's, else this process's.
+ * Undefined means `xcrun` falls back to `xcode-select`.
+ */
+export function commandDeveloperDir(): string | undefined {
+  return requestCommandEnvScope.getStore()?.DEVELOPER_DIR || process.env.DEVELOPER_DIR || undefined;
+}
+
 function resolveSpawnEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
   const requestEnv = requestCommandEnvScope.getStore();
   if (!requestEnv) return env;
@@ -695,38 +703,38 @@ function createExitError(
   return new AppError(
     'COMMAND_FAILED',
     `${executable} exited with code ${exitCode}`,
-    execFailureDetails(
-      { stdout, stderr, exitCode },
-      { cmd, args, ...xcrunToolNotFoundDetails(cmd, args, exitCode) },
-    ),
+    execFailureDetails({ stdout, stderr, exitCode }, { cmd, args }),
   );
 }
 
-// xcrun exits 72 (EX_OSFILE) when the selected developer dir has no such tool, e.g. when
-// xcode-select points at the Command Line Tools, which ship no simctl or devicectl.
+// xcrun exits 72 (EX_OSFILE) and prints `unable to find utility "<tool>"` when the selected
+// developer dir has no such tool, e.g. when xcode-select points at the Command Line Tools, which
+// ship no simctl or devicectl.
 const XCRUN_TOOL_NOT_FOUND_EXIT_CODE = 72;
+const XCRUN_TOOL_NOT_FOUND_STDERR = /xcrun: error: unable to find utility "([^"]+)"/;
 
 function xcrunToolNotFoundDetails(
-  cmd: string,
-  args: readonly string[],
-  exitCode: number,
+  result: Pick<ExecResult, 'stderr'> & Readonly<{ exitCode: number | null }>,
+  extra: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  if (path.basename(cmd) !== 'xcrun' || exitCode !== XCRUN_TOOL_NOT_FOUND_EXIT_CODE) return {};
-  const developerDir =
-    requestCommandEnvScope.getStore()?.DEVELOPER_DIR ?? process.env.DEVELOPER_DIR;
+  const cmd = typeof extra?.cmd === 'string' ? extra.cmd : undefined;
+  const firstArg = Array.isArray(extra?.args) ? extra.args[0] : undefined;
+  const stderrTool = XCRUN_TOOL_NOT_FOUND_STDERR.exec(result.stderr)?.[1];
+  const xcrunExit72 =
+    cmd !== undefined &&
+    path.basename(cmd) === 'xcrun' &&
+    result.exitCode === XCRUN_TOOL_NOT_FOUND_EXIT_CODE;
+  if (!xcrunExit72 && !stderrTool) return {};
+  const tool = stderrTool ?? (typeof firstArg === 'string' ? firstArg : 'the tool');
+  const developerDir = commandDeveloperDir();
   const source = developerDir
     ? `DEVELOPER_DIR ${developerDir}`
-    : `the xcode-select developer dir ${readXcodeSelectPath() ?? '(unknown)'}`;
+    : 'the developer dir selected by xcode-select (see xcode-select -p)';
   return {
     reason: 'xcrun-tool-not-found',
     developerDir: developerDir ?? null,
-    hint: `xcrun could not find ${args[0] ?? 'the tool'} in ${source}. Export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer (or your Xcode's path) before running agent-device, or run sudo xcode-select -s /Applications/Xcode.app.`,
+    hint: `xcrun could not find ${tool} in ${source}. Export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer (or your Xcode's path) before running agent-device, or run sudo xcode-select -s /Applications/Xcode.app.`,
   };
-}
-
-function readXcodeSelectPath(): string | undefined {
-  const result = spawnSync('xcode-select', ['-p'], { encoding: 'utf8', timeout: 2_000 });
-  return result.status === 0 ? result.stdout.trim() || undefined : undefined;
 }
 
 /**
@@ -770,6 +778,8 @@ export function execFailureDetails(
     exitCode: result.exitCode,
     processExitError: true,
     ...extra,
+    // Last: a missing tool makes a caller's hint about the device or app moot.
+    ...xcrunToolNotFoundDetails(result, extra),
   };
 }
 

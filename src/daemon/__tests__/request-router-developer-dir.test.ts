@@ -1,0 +1,44 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import path from 'node:path';
+import { expect, test } from 'vitest';
+import { commandDeveloperDir } from '@agent-device/host-kit/command';
+import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
+import { LeaseRegistry } from '../lease-registry.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+
+test.sequential('each request runs its commands with its own developer dir, else the daemon one', async () => {
+  const seen: Array<string | undefined> = [];
+  const handler = createRequestHandler({
+    logPath: path.join(mkdtempForTestSync('agent-device-router-developer-dir-'), 'daemon.log'),
+    token: 'test-token',
+    sessionStore: makeSessionStore('agent-device-router-developer-dir-store-'),
+    leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways({
+      local: async () => {
+        seen.push(commandDeveloperDir());
+        return [];
+      },
+    }),
+    trackDownloadableArtifact: () => 'artifact-id',
+  });
+  const devices = (developerDir?: string) =>
+    handler({
+      token: 'test-token',
+      session: 'default',
+      command: 'devices',
+      positionals: [],
+      flags: { platform: 'ios' },
+      meta: { requestId: `req-${developerDir ?? 'none'}`, developerDir },
+    });
+
+  const saved = process.env.DEVELOPER_DIR;
+  process.env.DEVELOPER_DIR = '/daemon/Developer';
+  try {
+    await Promise.all([devices('/a/Developer'), devices('/b/Developer'), devices()]);
+  } finally {
+    if (saved === undefined) delete process.env.DEVELOPER_DIR;
+    else process.env.DEVELOPER_DIR = saved;
+  }
+  expect([...seen].sort()).toEqual(['/a/Developer', '/b/Developer', '/daemon/Developer']);
+});

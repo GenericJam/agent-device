@@ -1569,3 +1569,61 @@ test('computeDaemonCodeSignature ignores a relative-path-shaped string that is n
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test.sequential('sendToDaemon sends DEVELOPER_DIR to a local daemon and never to a remote one', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+  const previousDeveloperDir = process.env.DEVELOPER_DIR;
+  process.env.DEVELOPER_DIR = '/Applications/Xcode.app/Contents/Developer';
+  const stateDir = mkdtempForTestSync('agent-device-developer-dir-daemon-');
+  let localMeta: Record<string, unknown> | undefined;
+  const server = net.createServer((socket) => {
+    socket.setEncoding('utf8');
+    let body = '';
+    socket.on('data', (chunk) => {
+      body += chunk;
+      if (!body.includes('\n')) return;
+      localMeta = (JSON.parse(body.trim()) as { meta?: Record<string, unknown> }).meta;
+      socket.end(`${JSON.stringify({ ok: true, data: {} })}\n`);
+    });
+  });
+  let remoteParams: Record<string, any> | undefined;
+  let restoreHttp: (() => void) | undefined;
+  try {
+    const port = await listenOnLoopback(server);
+    writeCurrentDaemonInfo(stateDir, { port, transport: 'socket' });
+    await sendToDaemon({
+      session: 'default',
+      command: 'devices',
+      positionals: [],
+      flags: { stateDir, daemonTransport: 'socket' },
+      meta: { requestId: 'req-developer-dir-local' },
+    });
+
+    restoreHttp = mockEventHttpRequest(({ options, body, res }) => {
+      if (respondToHealthcheck(options, res)) return;
+      remoteParams = (JSON.parse(body) as { params: Record<string, any> }).params;
+      emitJsonRpcResult(res, 'req-developer-dir-remote', { ok: true, data: {} });
+    });
+    await withRemoteDaemonEnv(
+      async () =>
+        await sendToDaemon({
+          session: 'default',
+          command: 'devices',
+          positionals: [],
+          meta: { requestId: 'req-developer-dir-remote' },
+        }),
+    );
+  } finally {
+    restoreHttp?.();
+    await closeLoopbackServer(server);
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    if (previousDeveloperDir === undefined) delete process.env.DEVELOPER_DIR;
+    else process.env.DEVELOPER_DIR = previousDeveloperDir;
+  }
+  assert.equal(localMeta?.developerDir, '/Applications/Xcode.app/Contents/Developer');
+  assert.ok(remoteParams, 'the remote daemon received the request');
+  assert.equal(remoteParams.meta?.developerDir, undefined);
+});

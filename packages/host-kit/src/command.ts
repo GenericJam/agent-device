@@ -1,5 +1,6 @@
 export {
   coerceExecResult,
+  commandDeveloperDir,
   type CommandExecutorOverride,
   type ExecBackgroundOptions,
   type ExecBackgroundResult,
